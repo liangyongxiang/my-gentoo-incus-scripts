@@ -1,0 +1,78 @@
+image:
+  distribution: gentoo
+  description:  "{{ image.distribution|capfirst }} {{ image.architecture_mapped }}{% if image.variant != \"default\" %} ({{ image.variant }}){% endif %} ({{ image.serial }})"
+
+source:
+  downloader: gentoo-http
+  url: https://mirrors.ustc.edu.cn/gentoo/
+
+targets:
+  incus:
+    vm:
+      filesystem: ext4
+      size: 42949672960
+
+files:
+- path: /etc/systemd/network/enp5s0.network
+  generator: dump
+  content: |-
+    [Match]
+    Name=enp5s0
+
+    [Network]
+    DHCP=ipv4
+
+- path: /etc/machine-id
+  generator: dump
+  variants:
+
+- generator: incus-agent
+- generator: fstab
+- path: /etc/default/grub
+  generator: dump
+  content: |-
+    GRUB_DISTRIBUTOR="Gentoo"
+    # Set the recordfail timeout
+    GRUB_RECORDFAIL_TIMEOUT=0
+    # Do not wait on grub prompt
+    GRUB_TIMEOUT=0
+    # Set the default commandline
+    GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} console=tty1 console=ttyS0"
+    # Set the grub console type
+    GRUB_TERMINAL=console
+    # Disable os-prober
+    GRUB_DISABLE_OS_PROBER=true
+
+packages:
+  manager: portage
+  update: false
+  cleanup: true
+  sets:
+  - packages:
+    - net-misc/dhcpcd
+    - sys-boot/grub
+    - sys-kernel/gentoo-kernel-bin
+    # need by restart and stop
+    - sys-power/acpid
+    action: install
+
+actions:
+- trigger: post-files
+  action: |-
+    #!/bin/sh
+    set -eux
+    TARGET=""
+    [ "$(uname -m)" = "aarch64" ] && TARGET="arm64"
+    [ "$(uname -m)" = "x86_64" ] && TARGET="x86_64"
+    if [ ! -z "${TARGET}" ]; then
+        grub-install --target=${TARGET}-efi --no-nvram --removable
+        grub-install --target=${TARGET}-efi --no-nvram
+        grub-mkconfig -o /boot/grub/grub.cfg
+        sed -i "s#root=[^ ]*#root=/dev/sda2#g" /boot/grub/grub.cfg
+    fi
+
+    umount -l /etc/resolv.conf || true
+    rm /etc/resolv.conf
+    ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+    systemctl enable systemd-resolved
+    systemctl enable systemd-networkd

@@ -1,0 +1,28 @@
+image:
+  distribution: gentoo
+  description:  "{{ image.distribution|capfirst }} {{ image.architecture_mapped }}{% if image.variant != \"default\" %} ({{ image.variant }}){% endif %} ({{ image.serial }})"
+
+source:
+  downloader: gentoo-http
+  url: https://mirrors.ustc.edu.cn/gentoo/
+
+files:
+
+packages:
+  manager: portage
+  update: false
+  cleanup: true
+  sets:
+  - packages:
+    - net-misc/dhcpcd
+    action: install
+
+actions:
+- trigger: post-files
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    ln -s net.lo /etc/init.d/net.eth0
+    mkdir -p /etc/runlevels/default
+    rc-update add net.eth0 default || true
