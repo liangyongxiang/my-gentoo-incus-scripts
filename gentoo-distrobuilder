@@ -78,14 +78,14 @@ declare keyword="${uname_to_gentoo_keyword[$(uname -m)]}"
 declare incus_type="all"
 declare list_only=false
 
-declare -A all_size=()
-declare -A all_stage3_path=()
-declare -A all_date=()
-declare -A all_stage3_file=()
-declare -A all_abi_profile_date=()
-declare -A all_abi_profile=()
-declare -A all_abi=()
-declare -A all_init_system=()
+declare -A all_size_for_stage3=()
+declare -A all_path_for_stage3=()
+declare -A all_date_for_stage3=()
+declare -A all_file_for_stage3=()
+declare -A all_abi_profile_date_for_stage3=()
+declare -A all_abi_profile_for_stage3=()
+declare -A all_abi_for_stage3=()
+declare -A all_init_system_for_stage3=()
 declare -a all_stage3=()
 declare -a specified_stage3s=()
 
@@ -106,18 +106,18 @@ gentoo_stage3_info_fetch() {
 
     while read -r line ; do
         # line: 20231217T170203Z/stage3-amd64-openrc-20231217T170203Z.tar.xz 285457092
-        local stage3_size="${line#* }"                            # 285457092
-        local stage3_path="${line% *}"                            # 20231217T170203Z/stage3-amd64-openrc-20231217T170203Z.tar.xz
-        local stage3_date
-        local stage3_file
-        stage3_date=$(dirname "$stage3_path")                     # 20231217T170203Z
-        stage3_file=$(basename "$stage3_path")                    # stage3-amd64-openrc-20231217T170203Z.tar.xz
-        local stage3_abi_profile_date="${stage3_file%%.*}"        # stage3-amd64-openrc-20231217T170203Z
-        local stage3_abi_profile="${stage3_abi_profile_date%-*}"  # stage3-amd64-openrc
-        local abi="${stage3_abi_profile#*-}"                      # amd64-openrc-20231217T170203Z
-        abi="${abi%%-*}"                                    # amd64
-        local stage3="${stage3_abi_profile_date#*-*-}"            # openrc-20231217T170203Z
-        stage3="${stage3%-*}"                               # openrc
+        local size_for_stage3="${line#* }"                                  # 285457092
+        local path_for_stage3="${line% *}"                                  # 20231217T170203Z/stage3-amd64-openrc-20231217T170203Z.tar.xz
+        local date_for_stage3
+        local file_for_stage3
+        date_for_stage3=$(dirname "$path_for_stage3")                       # 20231217T170203Z
+        file_for_stage3=$(basename "$path_for_stage3")                      # stage3-amd64-openrc-20231217T170203Z.tar.xz
+        local abi_profile_date_for_stage3="${file_for_stage3%%.*}"          # stage3-amd64-openrc-20231217T170203Z
+        local abi_profile_for_stage3="${abi_profile_date_for_stage3%-*}"    # stage3-amd64-openrc
+        local abi_for_stage3="${abi_profile_for_stage3#*-}"                            # amd64-openrc-20231217T170203Z
+        abi_for_stage3="${abi_for_stage3%%-*}"                                                    # amd64
+        local stage3="${abi_profile_date_for_stage3#*-*-}"                  # openrc-20231217T170203Z
+        stage3="${stage3%-*}"                                               # openrc
         local init_system
         if [[ $stage3 = *systemd* ]]; then
             init_system="systemd"
@@ -125,14 +125,14 @@ gentoo_stage3_info_fetch() {
             init_system="openrc"
         fi
 
-        all_size["$stage3"]="$stage3_size"
-        all_stage3_path["$stage3"]="$stage3_path"
-        all_date["$stage3"]="$stage3_date"
-        all_stage3_file["$stage3"]="$stage3_file"
-        all_abi_profile["$stage3"]="$stage3_abi_profile"
-        all_abi_profile_date["$stage3"]="$stage3_abi_profile_date"
-        all_abi["$stage3"]="$abi"
-        all_init_system["$stage3"]="$init_system"
+        all_size_for_stage3["$stage3"]="$size_for_stage3"
+        all_path_for_stage3["$stage3"]="$path_for_stage3"
+        all_date_for_stage3["$stage3"]="$date_for_stage3"
+        all_file_for_stage3["$stage3"]="$file_for_stage3"
+        all_abi_profile_for_stage3["$stage3"]="$abi_profile_for_stage3"
+        all_abi_profile_date_for_stage3["$stage3"]="$abi_profile_date_for_stage3"
+        all_abi_for_stage3["$stage3"]="$abi_for_stage3"
+        all_init_system_for_stage3["$stage3"]="$init_system"
         all_stage3+=( "$stage3" )
     done <<< "$(grep -E '^[0-9].*stage3' "$latest_stage3_file" | grep -vE "${gentoo_stage3_mask[$keyword]}")"
 }
@@ -140,11 +140,14 @@ gentoo_stage3_info_fetch() {
 distrobuilder_run() {
     local stage3="$1"
     local cur_type="$2"
-
-    local template_filename="${SCRIPTPATH}/incus/images/${cur_type}-${all_init_system["$stage3"]}.yaml"
-    local target_dir="${GENTOO_INCUS_CACHE_DIR}/cache/images"
     local name_prefix=""
+    if [ "$cur_type" = "vm" ]; then
+        name_prefix="vm-"
+    fi
+    local image_name="${name_prefix}${all_abi_profile_date_for_stage3["$stage3"]}"
 
+    local template_filename="${SCRIPTPATH}/incus/images/${cur_type}-${all_init_system_for_stage3["$stage3"]}.yaml"
+    local target_dir="${GENTOO_INCUS_CACHE_DIR}/cache/images"
     local args=( '--debug' '--timeout' '3600' )
     args+=( 'build-incus' "$template_filename" "$target_dir" )
     if [ "$cur_type" = "vm" ]; then
@@ -152,50 +155,60 @@ distrobuilder_run() {
         name_prefix="vm-"
     fi
 
-    args+=( --type=unified )
-    args+=( --compression xz )
-    args+=( -o image.architecture="${all_abi[$stage3]}" )
-    args+=( -o image.variant="$stage3" )
-    args+=( -o image.serial="${all_date["$stage3"]}" )
-    args+=( -o image.name="${name_prefix}${all_abi_profile_date["$stage3"]}" )
-    args+=( -o source.variant="$stage3" )
+    if ! incus image show "$image_name" &>/dev/null; then
+        args+=( --type=unified )
+        args+=( --compression xz )
+        args+=( -o image.architecture="${all_abi_for_stage3[$stage3]}" )
+        args+=( -o image.variant="$stage3" )
+        args+=( -o image.serial="${all_date_for_stage3["$stage3"]}" )
+        args+=( -o image.name="${image_name}" )
+        args+=( -o source.variant="$stage3" )
 
-    echo doas distrobuilder "${args[@]}"
-    doas distrobuilder "${args[@]}"                 # TODO: doas or sudo or no password
+        echo doas distrobuilder "${args[@]}"
+        doas distrobuilder "${args[@]}"                 # TODO: doas or sudo or no password
 
-    local image_tarball="${target_dir}/${name_prefix}${all_stage3_file[$stage3]}"
-    local image_kvs=(
-        "user.gentoo.stage3_size=${all_size[$stage3]}"
-        "user.gentoo.stage3_path=${all_stage3_path[$stage3]}"
-        "user.gentoo.stage3_date=${all_date[$stage3]}"
-        "user.gentoo.stage3_file=${all_stage3_file[$stage3]}"
-        "user.gentoo.all_abi_profile_date=${all_abi_profile_date["$stage3"]}"
-        "user.gentoo.all_abi_profile=${all_abi_profile["$stage3"]}"
-        "user.gentoo.abi=${all_abi["$stage3"]}"
-        "user.gentoo.init_system=${all_init_system["$stage3"]}"
-    )
-    echo incus image import --alias "${name_prefix}${all_abi_profile_date[$stage3]}" "$image_tarball" "${image_kvs[@]}"
-    incus image import --alias "${name_prefix}${all_abi_profile_date[$stage3]}" "$image_tarball" "${image_kvs[@]}"
+        local image_tarball="${target_dir}/${name_prefix}${all_file_for_stage3[$stage3]}"
+        local image_kvs=(
+            "user.gentoo.stage3.size=${all_size_for_stage3[$stage3]}"
+            "user.gentoo.stage3.path=${all_path_for_stage3[$stage3]}"
+            "user.gentoo.stage3.date=${all_date_for_stage3[$stage3]}"
+            "user.gentoo.stage3.file=${all_file_for_stage3[$stage3]}"
+            "user.gentoo.stage3.abi_profile_date=${all_abi_profile_date_for_stage3["$stage3"]}"
+            "user.gentoo.stage3.abi_profile=${all_abi_profile_for_stage3["$stage3"]}"
+            "user.gentoo.stage3.abi=${all_abi_for_stage3["$stage3"]}"
+            "user.gentoo.init_system=${all_init_system_for_stage3["$stage3"]}"
+        )
+        echo incus image import --alias "$image_name" "$image_tarball" "${image_kvs[@]}"
+        incus image import --alias "$image_name" "$image_tarball" "${image_kvs[@]}"
 
-    local global_kvs=(
-        "user.gentoo.latest_image.$stage3=${name_prefix}${all_abi_profile_date[$stage3]}"
-    )
-    echo incus config set "${global_kvs[@]}"
-    incus config set "${global_kvs[@]}"
+        local global_kvs=(
+            "user.gentoo.latest_image.$stage3=$image_name"
+        )
+        echo incus config set "${global_kvs[@]}"
+        incus config set "${global_kvs[@]}"
+    else
+        echo "Image $image_name exist, do nothing"
+    fi
 }
 
 gentoo_distrobuilder_run() {
     local -n stage3s
     if [[ "${#specified_stage3s[*]}" -gt 0 ]]; then
+        local gentoo_stage3s=" ${all_stage3[*]} "
+        for s in "${specified_stage3s[@]}"; do
+            if [[ !  $gentoo_stage3s == *" $s "* ]]; then
+                echo "$gentoo_stage3s"
+                die "Unknow stage3: $s"
+            fi
+        done
         stage3s="specified_stage3s"
-        # TODO : check valid
     else
         stage3s="all_stage3"
     fi
 
     if "$list_only"; then
         for stage3 in "${stage3s[@]}"; do
-            echo "$stage3: ${all_abi_profile_date["$stage3"]}"
+            echo "$stage3: ${all_abi_profile_date_for_stage3["$stage3"]}"
         done
     else
         for stage3 in "${stage3s[@]}"; do
