@@ -38,10 +38,6 @@ parser_params() {
                 set -x
                 shift
                 ;;
-            -v|--verbose)
-                verbose_mode=true
-                shift
-                ;;
             -l|--list)
                 list_only=true
                 shift
@@ -79,7 +75,6 @@ declare -rA uname_to_gentoo_keyword=( ["x86_64"]="amd64" )
 declare -rA gentoo_stage3_mask=( ["amd64"]="x32" ) # incus not support x32
 declare keyword="${uname_to_gentoo_keyword[$(uname -m)]}"
 
-declare verbose_mode=false
 declare incus_type="all"
 declare list_only=false
 
@@ -99,10 +94,6 @@ die() {
     local code=${2:-1}
     echo >&2 -e "${msg}"
     exit "$code"
-}
-
-verbose_echo() {
-    "$verbose_mode" && echo "${@}"
 }
 
 gentoo_stage3_info_fetch() {
@@ -169,7 +160,7 @@ distrobuilder_run() {
     args+=( -o image.name="${name_prefix}${all_abi_profile_date["$stage3"]}" )
     args+=( -o source.variant="$stage3" )
 
-    verbose_echo doas distrobuilder "${args[@]}"
+    echo doas distrobuilder "${args[@]}"
     doas distrobuilder "${args[@]}"                 # TODO: doas or sudo or no password
 
     local image_tarball="${target_dir}/${name_prefix}${all_stage3_file[$stage3]}"
@@ -183,13 +174,13 @@ distrobuilder_run() {
         "user.gentoo.abi=${all_abi["$stage3"]}"
         "user.gentoo.init_system=${all_init_system["$stage3"]}"
     )
-    verbose_echo incus image import --alias "${name_prefix}${all_abi_profile[$stage3]}" "$image_tarball" "${image_kvs[@]}"
+    echo incus image import --alias "${name_prefix}${all_abi_profile[$stage3]}" "$image_tarball" "${image_kvs[@]}"
     incus image import --alias "${name_prefix}${all_abi_profile[$stage3]}" "$image_tarball" "${image_kvs[@]}"
 
     local global_kvs=(
         "user.gentoo.latest_image.$stage3=${name_prefix}${all_abi_profile_date[$stage3]}"
     )
-    verbose_echo incus config set "${global_kvs[@]}"
+    echo incus config set "${global_kvs[@]}"
     incus config set "${global_kvs[@]}"
 }
 
