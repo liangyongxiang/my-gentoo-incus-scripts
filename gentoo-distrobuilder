@@ -25,7 +25,7 @@ Examples:
         Create image of VM based on the following stage file:
           - stage3-amd64-systemd-mergedusr-2023*.tar.xz
 EOF
-    exit
+exit
 }
 
 parser_params() {
@@ -109,7 +109,7 @@ gentoo_stage3_info_fetch() {
         wget --output-document="$latest_stage3_file" "$latest_stage3_url"
     fi
 
-     while read -r line ; do
+    while read -r line ; do
         # line: 20231217T170203Z/stage3-amd64-openrc-20231217T170203Z.tar.xz 285457092
         stage3_size="${line#* }"                            # 285457092
         stage3_path="${line% *}"                            # 20231217T170203Z/stage3-amd64-openrc-20231217T170203Z.tar.xz
@@ -121,6 +121,11 @@ gentoo_stage3_info_fetch() {
         abi="${abi%%-*}"                                    # amd64
         stage3="${stage3_abi_profile_date#*-*-}"            # openrc-20231217T170203Z
         stage3="${stage3%-*}"                               # openrc
+        if [[ $stage3 = *systemd* ]]; then
+            init_system="systemd"
+        else
+            init_system="openrc"
+        fi
 
         all_size["$stage3"]="$stage3_size"
         all_stage3_path["$stage3"]="$stage3_path"
@@ -129,11 +134,7 @@ gentoo_stage3_info_fetch() {
         all_abi_profile["$stage3"]="$stage3_abi_profile"
         all_abi_profile_date["$stage3"]="$stage3_abi_profile_date"
         all_abi["$stage3"]="$abi"
-        if [[ $stage3 = *systemd* ]]; then
-            all_init_system["$stage3"]="systemd"
-        else
-            all_init_system["$stage3"]="openrc"
-        fi
+        all_init_system["$stage3"]="$init_system"
         all_stage3+=( "$stage3" )
     done <<< "$(grep -E '^[0-9].*stage3' "$latest_stage3_file" | grep -vE "${gentoo_stage3_mask[$keyword]}")"
 }
@@ -182,6 +183,7 @@ distrobuilder_run() {
     local global_kvs=(
         "user.gentoo.latest_image.$stage3=${name_prefix}${all_abi_profile_date[$stage3]}"
     )
+    echo incus config set "${global_kvs}"
     incus config set "${global_kvs}"
 }
 
@@ -198,22 +200,22 @@ gentoo_distrobuilder_run() {
         for stage3 in "${stage3s[@]}"; do
             echo "$stage3: ${all_abi_profile_date["$stage3"]}"
         done
+    else
+        for stage3 in "${stage3s[@]}"; do
+            case "$incus_type" in
+                "container")
+                    distrobuilder_run "$stage3" "container"
+                    ;;
+                "vm")
+                    distrobuilder_run "$stage3" "vm"
+                    ;;
+                "all")
+                    distrobuilder_run "$stage3" "container"
+                    distrobuilder_run "$stage3" "vm"
+                    ;;
+            esac
+        done
     fi
-
-    for stage3 in "${stage3s[@]}"; do
-        case "$incus_type" in
-            "container")
-                distrobuilder_run "$stage3" "container"
-                ;;
-            "vm")
-                distrobuilder_run "$stage3" "vm"
-                ;;
-            "all")
-                distrobuilder_run "$stage3" "container"
-                distrobuilder_run "$stage3" "vm"
-                ;;
-        esac
-    done
 }
 
 parser_params "$@"
