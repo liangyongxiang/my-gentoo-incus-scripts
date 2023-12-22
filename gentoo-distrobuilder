@@ -101,7 +101,7 @@ gentoo_stage3_info_fetch() {
     if ! find "$latest_stage3_file" -mtime +1 &> /dev/null; then
         mkdir -p "$(dirname "$latest_stage3_file")"
         local latest_stage3_url="${GENTOO_MIRROR}/releases/$keyword/autobuilds/latest-stage3.txt"
-        wget --output-document="$latest_stage3_file" "$latest_stage3_url"
+        wget --output-document="$latest_stage3_file" "$latest_stage3_url" >& /dev/null
     fi
 
     while read -r line ; do
@@ -174,8 +174,8 @@ distrobuilder_run() {
         "user.gentoo.abi=${all_abi["$stage3"]}"
         "user.gentoo.init_system=${all_init_system["$stage3"]}"
     )
-    echo incus image import --alias "${name_prefix}${all_abi_profile[$stage3]}" "$image_tarball" "${image_kvs[@]}"
-    incus image import --alias "${name_prefix}${all_abi_profile[$stage3]}" "$image_tarball" "${image_kvs[@]}"
+    echo incus image import --alias "${name_prefix}${all_abi_profile_date[$stage3]}" "$image_tarball" "${image_kvs[@]}"
+    incus image import --alias "${name_prefix}${all_abi_profile_date[$stage3]}" "$image_tarball" "${image_kvs[@]}"
 
     local global_kvs=(
         "user.gentoo.latest_image.$stage3=${name_prefix}${all_abi_profile_date[$stage3]}"
