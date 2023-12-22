@@ -198,7 +198,6 @@ gentoo_distrobuilder_run() {
         for stage3 in "${stage3s[@]}"; do
             echo "$stage3: ${all_abi_profile_date["$stage3"]}"
         done
-        return 0
     fi
 
     for stage3 in "${stage3s[@]}"; do
