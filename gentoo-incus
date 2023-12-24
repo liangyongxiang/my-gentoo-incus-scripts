@@ -28,12 +28,17 @@ EOF
 exit
 }
 
+declare -A args=()
 declare sub_cmd="image"
 declare image_sub_cmd="build"
 
-image_parser_params() {
+gentoo_incus_image_parser_params() {
     while [[ $# -gt 0 ]]; do
         case "${1-}" in
+            -h|--help)
+                echo "TODO"
+                shift
+                ;;
             -l|--list)
                 list_only=true
                 shift
@@ -63,6 +68,35 @@ image_parser_params() {
     done
 }
 
+gentoo_incus_create_parser_params() {
+    while [[ $# -gt 0 ]]; do
+        case "${1-}" in
+            -h|--help)
+                echo "TODO"
+                shift
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+
+    if [[ $# -gt 0 ]]; then
+        args['image_for_instance']="$1"
+        shift
+    else
+        die "TODO: request image or stage3"
+    fi
+
+    if [[ $# -gt 0 ]]; then
+        args['instance']="$1"
+        shift
+    else
+        # TODO: check stage3 short name
+        args['instance']=""
+    fi
+}
+
 parser_params() {
     while [[ $# -gt 0 ]]; do
         case "${1-}" in
@@ -73,29 +107,10 @@ parser_params() {
                 set -x
                 shift
                 ;;
-            image)
+            image|create|copy|launch|exec)
+                args['sub_cmd']="gentoo_incus_${1}"
+                args['sub_cmd_parser']="gentoo_incus_${1}_parser_params"
                 shift
-                image_parser_params "$@"
-                break
-                ;;
-            create)
-                shift
-                create_parser_params "$@"
-                break
-                ;;
-            copy)
-                shift
-                gentoo_incus_copy_parser_params "$@"
-                break
-                ;;
-            launch)
-                shift
-                gentoo_incus_launch_parser_params "$@"
-                break
-                ;;
-            exec)
-                shift
-                gentoo_incus_exec_parser_params "$@"
                 break
                 ;;
             *)
@@ -103,6 +118,8 @@ parser_params() {
                 ;;
         esac
     done
+
+    ${args['sub_cmd_parser']}
 }
 
 # ENV
@@ -134,41 +151,6 @@ gentoo_image_run_distrobuilder() {
     declare -A all_init_system_for_stage3=()
     declare -a all_stage3=()
     declare -a specified_stage3s=()
-
-    local -n stage3s
-    if [[ "${#specified_stage3s[*]}" -gt 0 ]]; then
-        local gentoo_stage3s=" ${all_stage3[*]} "
-        for s in "${specified_stage3s[@]}"; do
-            if [[ !  $gentoo_stage3s == *" $s "* ]]; then
-                echo "$gentoo_stage3s"
-                die "Unknow stage3: $s"
-            fi
-        done
-        stage3s="specified_stage3s"
-    else
-        stage3s="all_stage3"
-    fi
-
-    if "$list_only"; then
-        for stage3 in "${stage3s[@]}"; do
-            echo "$stage3: ${all_abi_profile_date_for_stage3["$stage3"]}"
-        done
-    else
-        for stage3 in "${stage3s[@]}"; do
-            case "$incus_type" in
-                "container")
-                    distrobuilder_run "$stage3" "container"
-                    ;;
-                "vm")
-                    distrobuilder_run "$stage3" "vm"
-                    ;;
-                "all")
-                    distrobuilder_run "$stage3" "container"
-                    distrobuilder_run "$stage3" "vm"
-                    ;;
-            esac
-        done
-    fi
 
     gentoo_stage3_info_fetch() {
         local latest_stage3_file="${GENTOO_INCUS_CACHE_DIR}/cache/$keyword/latest-stage3.txt"
@@ -222,28 +204,28 @@ gentoo_image_run_distrobuilder() {
 
         local template_filename="${SCRIPTPATH}/incus/images/${cur_type}-${all_init_system_for_stage3["$stage3"]}.yaml"
         local target_dir="${GENTOO_INCUS_CACHE_DIR}/cache/images"
-        local args=( '--debug' '--timeout' '3600' )
-        args+=( 'build-incus' "$template_filename" "$target_dir" )
+        local build_args=( '--debug' '--timeout' '3600' )
+        build_args+=( 'build-incus' "$template_filename" "$target_dir" )
         if [ "$cur_type" = "vm" ]; then
-            args+=( "--vm" )
+            build_args+=( "--vm" )
             name_prefix="vm-"
         fi
 
         if ! incus image show "$image_name" &>/dev/null; then
-            args+=( --type=unified )
-            args+=( --compression xz )
-            args+=( -o image.architecture="${all_abi_for_stage3[$stage3]}" )
-            args+=( -o image.variant="$stage3" )
-            args+=( -o image.serial="${all_date_for_stage3["$stage3"]}" )
-            args+=( -o image.name="${image_name}" )
-            args+=( -o source.variant="$stage3" )
+            build_args+=( --type=unified )
+            build_args+=( --compression xz )
+            build_args+=( -o image.architecture="${all_abi_for_stage3[$stage3]}" )
+            build_args+=( -o image.variant="$stage3" )
+            build_args+=( -o image.serial="${all_date_for_stage3["$stage3"]}" )
+            build_args+=( -o image.name="${image_name}" )
+            build_args+=( -o source.variant="$stage3" )
 
-            echo doas distrobuilder "${args[@]}"
-            doas distrobuilder "${args[@]}"                 # TODO: doas or sudo or no password
+            echo doas distrobuilder "${build_args[@]}"
+            doas distrobuilder "${build_args[@]}"                 # TODO: doas or sudo or no password
 
-            local image_tarball="${target_dir}/${name_prefix}${all_file_for_stage3[$stage3]}"
+            local image_tarball="$build_{targbuild_et_dir}/${name_prefix}${all_file_for_stage3[$stage3]}"
             local image_kvs=(
-                "user.gentoo.stage3.size=${all_size_for_stage3[$stage3]}"
+                "user.gentoo.stagebuild_3.size=${all_size_for_stage3[$stage3]}"
                 "user.gentoo.stage3.path=${all_path_for_stage3[$stage3]}"
                 "user.gentoo.stage3.date=${all_date_for_stage3[$stage3]}"
                 "user.gentoo.stage3.file=${all_file_for_stage3[$stage3]}"
@@ -265,12 +247,50 @@ gentoo_image_run_distrobuilder() {
         fi
     }
 
+    gentoo_stage3_info_fetch
+
+    local -n stage3s
+    if [[ "${#specified_stage3s[*]}" -gt 0 ]]; then
+        local gentoo_stage3s=" ${all_stage3[*]} "
+        for s in "${specified_stage3s[@]}"; do
+            if [[ !  $gentoo_stage3s == *" $s "* ]]; then
+                echo "$gentoo_stage3s"
+                die "Unknow stage3: $s"
+            fi
+        done
+        stage3s="specified_stage3s"
+    else
+        stage3s="all_stage3"
+    fi
+
+    if "$list_only"; then
+        for stage3 in "${stage3s[@]}"; do
+            echo "$stage3: ${all_abi_profile_date_for_stage3["$stage3"]}"
+        done
+    else
+        for stage3 in "${stage3s[@]}"; do
+            case "$incus_type" in
+                "container")
+                    distrobuilder_run "$stage3" "container"
+                    ;;
+                "vm")
+                    distrobuilder_run "$stage3" "vm"
+                    ;;
+                "all")
+                    distrobuilder_run "$stage3" "container"
+                    distrobuilder_run "$stage3" "vm"
+                    ;;
+            esac
+        done
+    fi
+
+
+
 }
 
 gentoo_incus_image() {
     case "$image_sub_cmd" in
         build)
-            gentoo_stage3_info_fetch
             gentoo_image_run_distrobuilder
             ;;
         list)
@@ -325,12 +345,21 @@ gentoo_incus_create() {
     #
 
     echo "TODO"
+    local image="${args[image_for_instance]}"
+    local instance="${args[instance]}"
 
-    #local stage3="$1"
-    #local image="$2"
     #local conf_kvs=()      # CPU Memory
     #local dev_kvs=()       # bin/etc/distfiles
     #echo incus create "$stage3" "$image"
+
+    echo incus create "$image" "$instance"
+    echo incus config device add "$instance" "bin" disk source="${SCRIPTPATH}"/instance/bin path="/root/bin" "shift=true"
+    echo incus config device add "$instance" "etc" disk source="${SCRIPTPATH}"/instance/etc path="/root/etc" "shift=true"
+    echo incus config device add "$instance" "user" disk source="${SCRIPTPATH}"/instance/home path="/root/home" "shift=true"
+    echo incus config device add "$instance" "repos" disk source="${SCRIPTPATH}"/cache/repos path="/root/repos" "shift=true"
+    echo incus config device add "$instance" "distfiles" disk source="${SCRIPTPATH}"/cache/distfiles path="/var/cache/distfiles" "shift=true"
+    echo incus config set "$instance" limits.cpu="${INCUS_INSTANCE_CPU}"
+    echo incus config set "$instance" limits.memory="${INCUS_INSTANCE_MEMORY}"
 }
 
 gentoo_incus_copy() {
@@ -346,26 +375,8 @@ gentoo_incus_exec() {
 }
 
 gentoo_incus() {
-    case "$sub_cmd" in
-        image)
-            gentoo_incus_image
-            ;;
-        create)
-            gentoo_incus_create
-            ;;
-        copy)
-            gentoo_incus_copy
-            ;;
-        launch)
-            gentoo_incus_launch
-            ;;
-        exec)
-            gentoo_incus_exec
-            ;;
-        *)
-            die "Unknow Sub-Commnad"
-            ;;
-    esac
+    local cmd="${args[sub_cmd]}"
+    $cmd
 }
 
 parser_params "$@"
