@@ -29,6 +29,7 @@ exit
 }
 
 declare -A args=()
+declare -a args_actions=()
 declare sub_cmd="image"
 declare image_sub_cmd="build"
 
@@ -92,6 +93,59 @@ parser_params() {
 
     gentoo_incus_create_parser_params() {
         local is_vm=false
+        local key
+        local image
+
+        # TODO: add arg
+        local cpu
+        local memory
+        cpu="$(( $(nproc) / 4 ))"
+        memory="$(awk '/MemTotal/ {print $2}' /proc/meminfo)"
+        memory="$(( memory / 1024 / 1024 / 4 ))"
+
+        action_add() {
+            args_actions+=( $# "${@}" )
+        }
+
+        instance_init_minial() {
+            action_add main_tree_switch_to_git
+            action_add emerge --sync
+            action_add emerge --update --deep --newuse --backtrack=300 @world
+            action_add emerge --noreplace app-eselect/eselect-repository app-portage/flaggie
+            #action_add emerge --depclean
+        }
+        instance_init_stable() {
+            action_add makeconf_update "FEATURES"             "buildpkg"
+            action_add makeconf_update 'COMMON_FLAGS'        "-O2 -pipe -ggdb -fdiagnostics-color=always -frecord-gcc-switches"
+            action_add makeconf_update 'LDFLAGS'              "\${LDFLAGS} -Wl,--defsym=__gentoo_check_ldflags__=0"
+            action_add makeconf_update 'PORTAGE_ELOG_CLASSES' "warn error info log qa"
+            action_add makeconf_update 'PORTAGE_ELOG_SYSTEM'  "save"
+            action_add makeconf_update 'EMERGE_DEFAULT_OPTS'  "--verbose --quiet --noreplace --autounmask-continue --autounmask-write"
+            action_add makeconf_update "GENTOO_MIRRORS"       "https://mirrors.bfsu.edu.cn/gentoo/"
+            action_add makeconf_update_makeopts
+            action_add makeconf_update "ACCEPT_LICENSE"       '*'
+            action_add makeconf_update "GRUB_PLATFORMS"       "efi-64"
+            action_add makeconf_update 'BINPKG_FORMAT'        "gpkg"
+            instance_init_minial
+        }
+        instance_init_stable_with_all_targets() {
+            action_add makeconf_update 'LUA_SINGLE_TARGET'    "lua5-1"
+            action_add makeconf_update 'LUA_TARGETS'          "lua5-1 lua5-2 lua5-3 lua5-4"
+            action_add makeconf_update 'PYTHON_SINGLE_TARGET' "python3_11"
+            action_add makeconf_update 'PYTHON_TARGETS'       "python3_10 python3_11 python3_12"
+            action_add makeconf_update 'RUBY_TARGETS'         "ruby30 ruby31"
+            instance_init_stable
+            action_add emerge_install_script dev
+        }
+        instance_init_testing() {
+            action_add makeconf_update_testing_keyword
+            instance_init_stable
+        }
+        instance_init_testing_with_all_targets() {
+            action_add makeconf_update_testing_keyword
+            instance_init_stable_with_all_targets
+        }
+
         while [[ $# -gt 0 ]]; do
             case "${1-}" in
                 -h|--help)
@@ -102,6 +156,58 @@ parser_params() {
                     is_vm=true
                     shift
                     ;;
+                --init-minial)
+                    instance_init_minial
+                    shift;
+                    ;;
+                --init-stable)
+                    instance_init_stable
+                    shift;
+                    ;;
+                --init-stable-with-all-targets)
+                    instance_init_stable_with_all_targets
+                    shift;
+                    ;;
+                --init-testing)
+                    instance_init_testing
+                    shift;
+                    ;;
+                --init-testing-with-all-targets)
+                    instance_init_testing_with_all_targets
+                    shift;
+                    ;;
+                -g|--git)
+                    args['gentoo_sync_type']='git'
+                    shift;
+                    ;;
+                -m|--make-conf)
+                    if [[ $# -lt 3 ]] || [[ "$2" == -* ]] || [[ "$3" == -* ]]; then
+                        die "/etc/portage/make.conf request 1 or 2 parameters"
+                    fi
+                    action_add makeconf_update "$2" "$3"
+                    shift;
+                    ;;
+                -s|--install-package-script)
+                    if [[ $# -lt 2 ]] || [[ ! " dev dwm fcitx5 " =~ [[:space:]]$2[[:space:]] ]]; then
+                        die "Current only support script: dev/dwm/fcitx5"
+                    fi
+                    action_add emerge_install_script "$2"
+                    shift;
+                    ;;
+                -f|--flaggie)
+                    if [[ $# -lt 3 ]] || [[ "$2" == -* ]] || [[ "$3" == -* ]]; then
+                        die "flaggie request 1 or 2 parameters"
+                    fi
+                    action_add flaggie "$2" "$3"
+                    shift;
+                    ;;
+                --install-packages)
+                    while [[ $# -ge 2 ]] && [[ "$2" != -* ]]; do
+                        action_add flaggie "emerge" "--noreplace" "$2"
+                        shift
+                    done
+                    shift;
+                    ;;
                 *)
                     break
                     ;;
@@ -109,14 +215,11 @@ parser_params() {
         done
 
         if [[ $# -gt 0 ]]; then
-            local key
             if "$is_vm"; then
-                key="user.gentoo.vm.latest_image.$1"
+                key="user.gentoo.latest_image.vm.$1"
             else
-                key="user.gentoo.container.latest_image.$1"
+                key="user.gentoo.latest_image.container.$1"
             fi
-
-            local image
             image=$(incus config get "$key")
             if [ -z "$image" ]; then
                 image="$1"
@@ -129,18 +232,70 @@ parser_params() {
                 die "Unknown Image: $1"
             fi
         else
-            die "TODO: request image or stage3"
+            die "TODO: request image or profile"
         fi
 
         if [[ $# -gt 0 ]]; then
             args['instance']="$1"
             shift
         else
+            local instance
+            instance=$(incus image get-property "$image" "user.gentoo.stage3.abi_profile")
+            if [ -z "$instance" ]; then
+                die "Image property error: user.gentoo.stage3.abi_profile"
+            fi
+            if "$is_vm"; then
+                instance="vm-${instance}"
+            fi
+            if incus info "$instance" &>/dev/null; then
+                #die "Instance $instance exist"
+                :
+            fi
             # TODO: check stage3 short name
-            args['instance']=""
+            args['instance']="$instance"
         fi
+
+        args["cpu"]="$cpu"
+        args["memory"]="${memory}GiB"
+        args['stop']=true
     }
 
+    gentoo_incus_launch_parser_params() {
+        gentoo_incus_create_parser_params "$@"
+        args['stop']=false
+    }
+
+    gentoo_incus_copy_parser_params() {
+        while [[ $# -gt 0 ]]; do
+            case "${1-}" in
+                -h|--help)
+                    echo "TODO"
+                    shift
+                    ;;
+                *)
+                    break
+                    ;;
+            esac
+        done
+
+        if [[ $# -gt 0 ]]; then
+            if incus info "$1"; then
+                args["copy_from"]="$1"
+                shift
+            else
+                die "Unknown Image: $1"
+            fi
+        else
+            die "TODO: Request an exist instance"
+        fi
+
+        if [[ $# -gt 0 ]]; then
+            args['instance']="$1"
+            shift
+        else
+            die "TODO: Request new instance name"
+        fi
+    }
     ${args['sub_cmd_parser']} "$@"
 }
 
@@ -368,40 +523,52 @@ gentoo_incus_create() {
     #       - depclean
     #
 
-    echo "TODO"
+    # TODO: binpkgs
+
     local image="${args[image_for_instance]}"
     local instance="${args[instance]}"
 
-    #local conf_kvs=()      # CPU Memory
-    #local dev_kvs=()       # bin/etc/distfiles
-    #echo incus create "$stage3" "$image"
+    incus create "$image" "$instance"
+    incus config device add "$instance" "bin" disk source="${SCRIPTPATH}"/instance/rootfs/bin path="/root/bin" "shift=true"
+    incus config device add "$instance" "etc" disk source="${SCRIPTPATH}"/instance/rootfs/etc path="/root/etc" "shift=true"
+    incus config device add "$instance" "user" disk source="${SCRIPTPATH}"/instance/rootfs/home path="/root/home" "shift=true"
+    incus config device add "$instance" "repos" disk source="${SCRIPTPATH}"/cache/repos path="/root/repos" "shift=true"
+    incus config device add "$instance" "distfiles" disk source="/var/cache/distfiles" path="/var/cache/distfiles" "shift=true"
+    incus config set "$instance" limits.cpu="${args[cpu]}"
+    incus config set "$instance" limits.memory="${args[memory]}"
 
-    echo incus create "$image" "$instance"
-    echo incus config device add "$instance" "bin" disk source="${SCRIPTPATH}"/instance/bin path="/root/bin" "shift=true"
-    echo incus config device add "$instance" "etc" disk source="${SCRIPTPATH}"/instance/etc path="/root/etc" "shift=true"
-    echo incus config device add "$instance" "user" disk source="${SCRIPTPATH}"/instance/home path="/root/home" "shift=true"
-    echo incus config device add "$instance" "repos" disk source="${SCRIPTPATH}"/cache/repos path="/root/repos" "shift=true"
-    echo incus config device add "$instance" "distfiles" disk source="${SCRIPTPATH}"/cache/distfiles path="/var/cache/distfiles" "shift=true"
-    echo incus config set "$instance" limits.cpu="${INCUS_INSTANCE_CPU}"
-    echo incus config set "$instance" limits.memory="${INCUS_INSTANCE_MEMORY}"
-}
+    incus start "$instance"
+    while ! incus info stage3-amd64-desktop-openrc  | grep -E 'Processes: [0-9]+' &>/dev/null; do
+        sleep 1
+    done
+    while ! incus exec "$instance" ip address show scope global | grep 'inet.* scope global'; do
+        sleep 1
+    done
 
-gentoo_incus_copy() {
-    echo "TODO"
+    local i=0
+    for ((i = 0; i < ${#args_actions[@]};)); do
+        local offset="${args_actions[$i]}"
+        i=$((i+1))
+        incus exec "$instance" -- /root/bin/instance-exec "${args_actions[@]:$i:$offset}"
+        i=$((i+offset))
+    done
+
+    if "${args['stop']}"; then
+        incus stop "$instance"
+    fi
 }
 
 gentoo_incus_launch() {
-    echo "TODO"
+    gentoo_incus_create
+}
+
+gentoo_incus_copy() {
+    echo incus copy "${args[copy_from]}" "${args[instance]}"
 }
 
 gentoo_incus_exec() {
-    echo "TODO"
-}
-
-gentoo_incus() {
-    local cmd="${args[sub_cmd]}"
-    $cmd
+    echo incus exec "${args[instance]}" bash
 }
 
 parser_params "$@"
-gentoo_incus
+"${args[sub_cmd]}" "$@"

@@ -1,0 +1,96 @@
+#!/bin/bash
+
+set -Eeuo pipefail
+#set -x
+
+main_tree_switch_to_git() {
+    if ! portageq repos_config / | grep -E 'sync-type.*git' &>/dev/null; then
+        emerge dev-vcs/git app-eselect/eselect-repository
+        eselect repository remove gentoo
+        eselect repository enable gentoo
+    fi
+    local repo="/var/db/repos/gentoo"
+    if ! git -C "$repo" rev-parse &> /dev/null; then
+        rm -rf "$repo" && mkdir "$repo"
+        git -C "$repo" clone /root/repos/gentoo .  # cloneing speed up
+    fi
+}
+
+makeconf_update() {
+    local key="${1}"
+    local value="${2}"
+    python "$(dirname "${BASH_SOURCE[0]}")/makeconf.py" "$key" "$value"
+}
+
+emerge_install_script() {
+    local script="$1"
+
+    case "$script" in
+        dev)
+            flaggie "sys-apps/util-linux" "+caps"
+            local dev_packages=(
+                app-editors/vim
+                app-portage/eix
+                app-portage/gentoolkit
+                app-portage/iwdevtools
+                app-portage/pfl
+                app-portage/pkg-testing-tools
+                app-portage/portage-utils
+                app-text/ansifilter
+                dev-util/pkgcheck
+                dev-util/pkgdev
+                sys-process/htop
+            )
+            emerge "${dev_packages[@]}"
+
+            rsync_path root /root/etc/portage/bashrc /etc/portage/bashrc
+            rsync_path root /root/etc/portage/env /etc/portage/env
+            ;;
+        dwm)
+            flaggie media-libs/mesa +video_cards_virgl
+            emerge -1 media-libs/mesa
+
+            local dev_packages=(
+                x11-base/xorg-server
+                x11-misc/dmenu
+                x11-terms/st
+                x11-wm/dwm
+            )
+            emerge "${dev_packages[@]}"
+
+            local new_user="user"
+            if ! id "$new_user"; then
+                useradd -m -G users,wheel,audio -s /bin/bash "$new_user"
+                passwd -d "$new_user"
+            fi
+
+            local file="/home/user/.xinitrc"
+            rsync_path "$new_user" "/root$file" "$file"
+            ;;
+        fcitx5)
+            flaggie x11-libs/xcb-imdkit +~amd64
+            flaggie app-i18n/fcitx +~amd64
+            flaggie app-i18n/fcitx-qt +~amd64
+            flaggie app-i18n/fcitx-gtk +~amd64
+            flaggie app-i18n/fcitx-configtool +~amd64
+
+            local dev_packages=(
+                app-i18n/fcitx
+                app-i18n/fcitx-configtool
+            )
+            emerge "${dev_packages[@]}"
+            ;;
+    esac
+
+}
+
+makeconf_update_makeopts() {
+    makeconf_update "MAKEOPTS" "--jobs $(nproc) --load-average $(( $(nproc) + 1 ))"
+}
+
+makeconf_update_testing_keyword() {
+    makeconf_update 'ACCEPT_KEYWORDS' "~$(portageq envvar ARCH)"
+}
+
+echo "$@"
+"$@"
