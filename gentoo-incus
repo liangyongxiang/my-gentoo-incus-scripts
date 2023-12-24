@@ -31,16 +31,9 @@ exit
 declare sub_cmd="image"
 declare image_sub_cmd="build"
 
-parser_params() {
+image_parser_params() {
     while [[ $# -gt 0 ]]; do
         case "${1-}" in
-            -h|--help)
-                usage
-                ;;
-            --debug)
-                set -x
-                shift
-                ;;
             -l|--list)
                 list_only=true
                 shift
@@ -65,6 +58,48 @@ parser_params() {
             *)
                 specified_stage3s=( "${@}" )
                 break
+                ;;
+        esac
+    done
+}
+
+parser_params() {
+    while [[ $# -gt 0 ]]; do
+        case "${1-}" in
+            -h|--help)
+                usage
+                ;;
+            --debug)
+                set -x
+                shift
+                ;;
+            image)
+                shift
+                image_parser_params "$@"
+                break
+                ;;
+            create)
+                shift
+                create_parser_params "$@"
+                break
+                ;;
+            copy)
+                shift
+                gentoo_incus_copy_parser_params "$@"
+                break
+                ;;
+            launch)
+                shift
+                gentoo_incus_launch_parser_params "$@"
+                break
+                ;;
+            exec)
+                shift
+                gentoo_incus_exec_parser_params "$@"
+                break
+                ;;
+            *)
+                die "Unknown Sub Command : $1"
                 ;;
         esac
     done
@@ -248,7 +283,53 @@ gentoo_incus_image() {
 }
 
 gentoo_incus_create() {
+    # find image from stage3 image
+    #   - latest version
+    #
+    # config in incus
+    #   - need_run
+    #       - update_makeconf
+    #       - preinstall_package_set
+    #       - gentoo_witch_to_git
+    # config in instance
+    #   - make.conf
+    #       - COMMON_FLAGS
+    #       - GENTOO_MIRRORS
+    #       - MAKEOPTS
+    #       - GRUB_PLATFORMS
+    #       - FEATURES
+    #       - ACCEPT_KEYWORDS
+    #       - ACCEPT_LICENSE
+    #       - USE
+    #       - RUBY_TARGETS
+    #       - RUBY_SINGLE_TARGETS
+    #       - PYTHON_SINGLE_TARGETS
+    #       - LUA_SINGLE_TARGETS
+    #       - EMERGE_DEFAULT_OPTS
+    #       - VIDEO_CARDS
+    #   - preinstall package set
+    #       - base
+    #           - git
+    #           - eselect-repository
+    #           - flaggie
+    #       - dev packages
+    #       - htop
+    #       - dwm
+    #       - fcitx5
+    #   - gentoo_sync_type
+    #   - emerge
+    #       - sync
+    #       - update
+    #       - depclean
+    #
+
     echo "TODO"
+
+    #local stage3="$1"
+    #local image="$2"
+    #local conf_kvs=()      # CPU Memory
+    #local dev_kvs=()       # bin/etc/distfiles
+    #echo incus create "$stage3" "$image"
 }
 
 gentoo_incus_copy() {
