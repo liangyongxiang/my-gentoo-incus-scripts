@@ -32,71 +32,6 @@ declare -A args=()
 declare sub_cmd="image"
 declare image_sub_cmd="build"
 
-gentoo_incus_image_parser_params() {
-    while [[ $# -gt 0 ]]; do
-        case "${1-}" in
-            -h|--help)
-                echo "TODO"
-                shift
-                ;;
-            -l|--list)
-                list_only=true
-                shift
-                ;;
-            -t|--type)
-                if [[ $# -le 1 ]]; then
-                    die "missing type"
-                fi
-                case ${2} in
-                    cn|cnt|container)
-                        incus_type="container"
-                        ;;
-                    vm|virtual-machine)
-                        incus_type="vm"
-                        ;;
-                    all)
-                        incus_type="vm,container"
-                        ;;
-                esac
-                shift 2
-                ;;
-            *)
-                specified_stage3s=( "${@}" )
-                break
-                ;;
-        esac
-    done
-}
-
-gentoo_incus_create_parser_params() {
-    while [[ $# -gt 0 ]]; do
-        case "${1-}" in
-            -h|--help)
-                echo "TODO"
-                shift
-                ;;
-            *)
-                break
-                ;;
-        esac
-    done
-
-    if [[ $# -gt 0 ]]; then
-        args['image_for_instance']="$1"
-        shift
-    else
-        die "TODO: request image or stage3"
-    fi
-
-    if [[ $# -gt 0 ]]; then
-        args['instance']="$1"
-        shift
-    else
-        # TODO: check stage3 short name
-        args['instance']=""
-    fi
-}
-
 parser_params() {
     while [[ $# -gt 0 ]]; do
         case "${1-}" in
@@ -119,7 +54,94 @@ parser_params() {
         esac
     done
 
-    ${args['sub_cmd_parser']}
+    gentoo_incus_image_parser_params() {
+        while [[ $# -gt 0 ]]; do
+            case "${1-}" in
+                -h|--help)
+                    echo "TODO"
+                    shift
+                    ;;
+                -l|--list)
+                    list_only=true
+                    shift
+                    ;;
+                -t|--type)
+                    if [[ $# -le 1 ]]; then
+                        die "missing type"
+                    fi
+                    case ${2} in
+                        cn|cnt|container)
+                            incus_type="container"
+                            ;;
+                        vm|virtual-machine)
+                            incus_type="vm"
+                            ;;
+                        all)
+                            incus_type="vm,container"
+                            ;;
+                    esac
+                    shift 2
+                    ;;
+                *)
+                    specified_stage3s=( "${@}" )
+                    break
+                    ;;
+            esac
+        done
+    }
+
+    gentoo_incus_create_parser_params() {
+        local is_vm=false
+        while [[ $# -gt 0 ]]; do
+            case "${1-}" in
+                -h|--help)
+                    echo "TODO"
+                    shift
+                    ;;
+                --vm)
+                    is_vm=true
+                    shift
+                    ;;
+                *)
+                    break
+                    ;;
+            esac
+        done
+
+        if [[ $# -gt 0 ]]; then
+            local key
+            if "$is_vm"; then
+                key="user.gentoo.vm.latest_image.$1"
+            else
+                key="user.gentoo.container.latest_image.$1"
+            fi
+
+            local image
+            image=$(incus config get "$key")
+            if [ -z "$image" ]; then
+                image="$1"
+            fi
+
+            if incus image show "$image" &>/dev/null; then
+                args['image_for_instance']="$image"
+                shift
+            else
+                die "Unknown Image: $1"
+            fi
+        else
+            die "TODO: request image or stage3"
+        fi
+
+        if [[ $# -gt 0 ]]; then
+            args['instance']="$1"
+            shift
+        else
+            # TODO: check stage3 short name
+            args['instance']=""
+        fi
+    }
+
+    ${args['sub_cmd_parser']} "$@"
 }
 
 # ENV
@@ -196,9 +218,14 @@ gentoo_image_run_distrobuilder() {
     distrobuilder_run() {
         local stage3="$1"
         local cur_type="$2"
-        local name_prefix=""
+        local name_prefix
+        local vm_key
         if [ "$cur_type" = "vm" ]; then
             name_prefix="vm-"
+            vm_key="user.gentoo.latest_image.vm"
+        else
+            name_prefix=""
+            vm_key="user.gentoo.latest_image.container"
         fi
         local image_name="${name_prefix}${all_abi_profile_date_for_stage3["$stage3"]}"
 
@@ -223,7 +250,7 @@ gentoo_image_run_distrobuilder() {
             echo doas distrobuilder "${build_args[@]}"
             doas distrobuilder "${build_args[@]}"                 # TODO: doas or sudo or no password
 
-            local image_tarball="$build_{targbuild_et_dir}/${name_prefix}${all_file_for_stage3[$stage3]}"
+            local image_tarball="${target_dir}/${name_prefix}${all_file_for_stage3[$stage3]}"
             local image_kvs=(
                 "user.gentoo.stagebuild_3.size=${all_size_for_stage3[$stage3]}"
                 "user.gentoo.stage3.path=${all_path_for_stage3[$stage3]}"
@@ -238,7 +265,7 @@ gentoo_image_run_distrobuilder() {
             incus image import --alias "$image_name" "$image_tarball" "${image_kvs[@]}"
 
             local global_kvs=(
-                "user.gentoo.latest_image.$stage3=$image_name"
+                "$vm_key.$stage3=$image_name"
             )
             echo incus config set "${global_kvs[@]}"
             incus config set "${global_kvs[@]}"
@@ -283,9 +310,6 @@ gentoo_image_run_distrobuilder() {
             esac
         done
     fi
-
-
-
 }
 
 gentoo_incus_image() {
