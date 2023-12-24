@@ -29,6 +29,7 @@ exit
 }
 
 declare sub_cmd="image"
+declare image_sub_cmd="build"
 
 parser_params() {
     while [[ $# -gt 0 ]]; do
@@ -193,7 +194,7 @@ distrobuilder_run() {
     fi
 }
 
-gentoo_distrobuilder_run() {
+gentoo_image_run_distrobuilder() {
     local -n stage3s
     if [[ "${#specified_stage3s[*]}" -gt 0 ]]; then
         local gentoo_stage3s=" ${all_stage3[*]} "
@@ -230,11 +231,54 @@ gentoo_distrobuilder_run() {
     fi
 }
 
+gentoo_incus_image() {
+    case "$image_sub_cmd" in
+        build)
+            gentoo_stage3_info_fetch
+            gentoo_image_run_distrobuilder
+            ;;
+        list)
+            # TODO
+            echo "TODO"
+            ;;
+        *)
+            die "Unknown Image Sub-Commnad"
+            ;;
+    esac
+}
+
+gentoo_incus_create() {
+    echo "TODO"
+}
+
+gentoo_incus_copy() {
+    echo "TODO"
+}
+
+gentoo_incus_launch() {
+    echo "TODO"
+}
+
+gentoo_incus_exec() {
+    echo "TODO"
+}
+
 gentoo_incus() {
     case "$sub_cmd" in
         image)
-            gentoo_stage3_info_fetch
-            gentoo_distrobuilder_run
+            gentoo_incus_image
+            ;;
+        create)
+            gentoo_incus_create
+            ;;
+        copy)
+            gentoo_incus_copy
+            ;;
+        launch)
+            gentoo_incus_launch
+            ;;
+        exec)
+            gentoo_incus_exec
             ;;
         *)
             die "Unknow Sub-Commnad"
