@@ -28,6 +28,8 @@ EOF
 exit
 }
 
+declare sub_cmd="image"
+
 parser_params() {
     while [[ $# -gt 0 ]]; do
         case "${1-}" in
@@ -228,6 +230,17 @@ gentoo_distrobuilder_run() {
     fi
 }
 
+gentoo_incus() {
+    case "$sub_cmd" in
+        image)
+            gentoo_stage3_info_fetch
+            gentoo_distrobuilder_run
+            ;;
+        *)
+            die "Unknow Sub-Commnad"
+            ;;
+    esac
+}
+
 parser_params "$@"
-gentoo_stage3_info_fetch
-gentoo_distrobuilder_run
+gentoo_incus
