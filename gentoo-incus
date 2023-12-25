@@ -447,7 +447,7 @@ gentoo_image_run_distrobuilder() {
 
     if "$list_only"; then
         for stage3 in "${stage3s[@]}"; do
-            echo "$stage3: ${all_abi_profile_date_for_stage3["$stage3"]}"
+            echo "$stage3"
         done
     else
         for stage3 in "${stage3s[@]}"; do
