@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+incus_image_build() {
+    echo "incus_image_build"
+}
+
+incus_image_update() {
+    echo "incus_image_update"
+}
+
+incus_image_list() {
+    echo "incus_image_list"
+}
+incus_image() {
+    usage() {
+        cat <<EOF
+image usage: TODO
+EOF
+        exit 1
+    }
+    while [[ $# -gt 0 ]]; do
+        case "${1-}" in
+            -h|--h)
+                usage
+                ;;
+            build)
+                shift
+                incus_image_build "$@"
+                ;;
+            update)
+                shift
+                incus_image_update "$@"
+                ;;
+            list)
+                shift
+                incus_image_list "$@"
+                ;;
+            *)
+                echo "Image Unknown Commnad: $1"
+                usage
+                ;;
+        esac
+    done
+}
+
+incus_exec() {
+    echo "Unknown Commnad: $1"
+}
+
+incus_create() {
+    echo "incus_create"
+}
+
+incus_launch() {
+    echo "incus_launch"
+}
+
+incus_copy() {
+    echo "incus_copy"
+}
+incus_update() {
+    echo "incus_update"
+}
+
+incus_list() {
+    echo "incus_list"
+}
+
+main() {
+    usage() {
+        cat <<EOF
+usage: TODO
+EOF
+        exit 1
+    }
+    while [[ $# -gt 0 ]]; do
+        case "${1-}" in
+            -h|--h)
+                usage
+                ;;
+            image)
+                shift
+                incus_image "$@"
+                ;;
+            create)
+                shift
+                incus_create "$@"
+                ;;
+            launch)
+                shift
+                incus_launch "$@"
+                ;;
+            update)
+                shift
+                incus_update "$@"
+                ;;
+            list)
+                shift
+                incus_list "$@"
+                ;;
+            copy)
+                shift
+                incus_copy "$@"
+                ;;
+            exec)
+                shift
+                incus_exec "$@"
+                ;;
+            *)
+                echo "Unknown Commnad: $1"
+                usage
+                ;;
+        esac
+    done
+}
+
+main "$@"

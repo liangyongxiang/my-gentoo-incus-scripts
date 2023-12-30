@@ -20,27 +20,28 @@ https://github.com/juippis/my-gentoo-lxd-scripts.git
 
 ./gentoo-incus image build --type vm [ <stage3> <stage3> ]
 ./gentoo-incus image build --type vm --all
+./gentoo-incus image build -p --all
 ```
 
 ## instance
 ```bash
-./gentoo-incus instance list
-./gentoo-incus instance list --type vm
-./gentoo-incus instance list --type container
-./gentoo-incus instance list --keep-update
-./gentoo-incus instance list --testing-all
-./gentoo-incus instance list --testing
-./gentoo-incus instance list --stable-all
-./gentoo-incus instance list --stable
+./gentoo-incus list
+./gentoo-incus list --type vm
+./gentoo-incus list --type container
+./gentoo-incus list --keep-update
+./gentoo-incus list --testing-all
+./gentoo-incus list --testing
+./gentoo-incus list --stable-all
+./gentoo-incus list --stable
 
-./gentoo-incus instance update --stable [ <stage3> <stage3> ]
-./gentoo-incus instance update --stable-all [ <stage3> <stage3> ]
-./gentoo-incus instance update --stable-all --all
-./gentoo-incus instance update -p --type vm [ <stage3> <stage3> ]
+./gentoo-incus update [ <stage3> <stage3> ]
+./gentoo-incus update -p [ <stage3> <stage3> ]
 
-./gentoo-incus instance create --type vm --stable --python all --python-single python3_11 --build-image <stage3>
+./gentoo-incus create --type vm --stable --python all --python-single python3_11 --build-image --sync --update --depclean <stage3>
 
-./gentoo-incus instance copy --type vm --stable --all-python-targets --create [ name ]
+./gentoo-incus launch --type vm --stable --python all --python-single python3_11 --build-image --sync --update --depclean <stage3>
+
+./gentoo-incus copy --type vm --stable --all-python-targets --create --sync --update [ name ]
 ```
 
 ## gtest
