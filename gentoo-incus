@@ -23,7 +23,7 @@ declare keyword="${uname_to_gentoo_keyword[$(uname -m)]}"
 
 declare -A args=(
     ["pretend"]=false
-    ["instance_type"]="container"
+    ["instance_type"]="ctr"
 )
 
 die() {
@@ -81,7 +81,7 @@ gentoo_stage3_info_fetch() {
 distrobuilder_run() {
     local stage3="$1"
     local type="${2:-${args[instance_type]}}"
-    local name_prefix image_name
+    local image_name
     local template_filename target_dir
     local build_args=()
     local image_tarball
@@ -90,8 +90,7 @@ distrobuilder_run() {
     # global flags
     build_args+=( '--debug' '--timeout' '3600' )
 
-    [ "$type" = "vm" ] && name_prefix="vm-" || name_prefix=""
-    image_name="${name_prefix}${all_abi_profile_date["$stage3"]}"
+    image_name="${type}-${all_abi_profile_date["$stage3"]}"
     if ! incus image show "$image_name" &>/dev/null; then
         # build-incus
         template_filename="${SCRIPTPATH}/incus/images/${type}-${all_init_system["$stage3"]}.yaml"
@@ -106,7 +105,7 @@ distrobuilder_run() {
         build_args+=( -o image.name="${image_name}" )
         build_args+=( -o source.variant="$stage3" )
 
-        image_tarball="${target_dir}/${name_prefix}${all_file[$stage3]}"
+        image_tarball="${target_dir}/${type}-${all_file[$stage3]}"
         image_kvs=(
             "user.gentoo.stage3.path=${all_path[$stage3]}"
             "user.gentoo.stage3.date=${all_date[$stage3]}"
@@ -125,6 +124,38 @@ distrobuilder_run() {
     fi
 }
 
+incus_check_type() {
+    if [[ $# -gt 1 ]]; then
+        case "$2" in
+            vm|virtual-machine)
+                args['instance_type']="vm"
+                ;;
+            ctr|container)
+                args['instance_type']="ctr"
+                ;;
+            all)
+                args['instance_type']="all"
+                ;;
+            *)
+                die "Unknown instance type : $2"
+                ;;
+        esac
+    else
+        die "instance type request 1 parameter"
+    fi
+}
+
+distrobuilder_run_all() {
+    for s in "${@}"; do
+        if [ "${args['instance_type']}" = "all" ]; then
+            distrobuilder_run "$s" "ctr"
+            distrobuilder_run "$s" "vm"
+        else
+            distrobuilder_run "$s"
+        fi
+    done
+}
+
 incus_image_build() {
     usage() {
         cat <<EOF
@@ -132,6 +163,9 @@ image build usage: TODO
 EOF
         exit 1
     }
+
+    gentoo_stage3_info_fetch
+
     local -n specified_stage3s
     local -a all_args
     while [[ $# -gt 0 ]]; do
@@ -144,25 +178,10 @@ EOF
                 shift
                 ;;
             -t|--type)
-                if [[ $# -gt 1 ]]; then
-                    case "$2" in
-                        vm|virtual-machine)
-                            args['instance_type']="vm"
-                            ;;
-                        ctr|container)
-                            args['instance_type']="container"
-                            ;;
-                        *)
-                            die "Unknown instance type : $2"
-                            ;;
-                    esac
-                    shift 2
-                else
-                    die "instance type request 1 parameter"
-                fi
+                incus_check_type "$@"
+                shift 2
                 ;;
             -a|--all)
-                gentoo_stage3_info_fetch
                 specified_stage3s="all_stage3"
                 shift
                 ;;
@@ -174,25 +193,99 @@ EOF
         esac
     done
 
+    distrobuilder_run_all "${specified_stage3s[@]}"
+}
+
+incus_image_update() {
+    usage() {
+        cat <<EOF
+image update usage: TODO
+EOF
+        exit 1
+    }
+
     gentoo_stage3_info_fetch
+
+    local -n specified_stage3s
+    local -a all_args
+    while [[ $# -gt 0 ]]; do
+        case "${1-}" in
+            -h|--h)
+                usage
+                ;;
+            -p|--pretend)
+                args['pretend']=true
+                shift
+                ;;
+            -t|--type)
+                incus_check_type "$@"
+                shift 2
+                ;;
+            -a|--all)
+                specified_stage3s="all_stage3"
+                shift
+                ;;
+            *)
+                all_args=( "$@" )
+                specified_stage3s="all_args"
+                break
+                ;;
+        esac
+    done
+
     for s in "${specified_stage3s[@]}"; do
-        echo "$s"
-        if [ "${args['instance_type']}" = "all" ]; then
-            distrobuilder_run "$s" "container"
-            distrobuilder_run "$s" "virtual-machine"
-        else
-            distrobuilder_run "$s"
+        local value
+        value=$(incus config get "user.gentoo.image.latest.${args[instance_type]}.$s")
+        if [ -n "$value" ]; then
+            local cur="${all_abi_profile_date[$s]}"
+            if [[ "$value" > "$cur" ]]; then
+                distrobuilder_run_all "$s"
+            fi
         fi
     done
 }
 
-incus_image_update() {
-    echo "incus_image_update"
+incus_image_list() {
+    usage() {
+        cat <<EOF
+image list: TODO
+EOF
+        exit 1
+    }
+    while [[ $# -gt 0 ]]; do
+        case "${1-}" in
+            -h|--h)
+                usage
+                ;;
+            -t|--type)
+                incus_check_type "$@"
+                shift 2
+                ;;
+            *)
+                echo "incus image list unknown option: $1"
+                usage
+                ;;
+        esac
+    done
+
+    local key
+    case "${args['instance_type']}" in
+        all)
+            key="-stage3-"
+            ;;
+        ctr)
+            key="crt-stage3-"
+            ;;
+        vm)
+            key="vm-stage3-"
+            ;;
+        *)
+            die "incus image list: TODO"
+            ;;
+    esac
+    incus image list -- "$key"
 }
 
-incus_image_list() {
-    echo "incus_image_list"
-}
 incus_image() {
     usage() {
         cat <<EOF
@@ -219,6 +312,10 @@ EOF
                 shift
                 incus_image_list "$@"
                 break
+                ;;
+            rm|remove)
+                echo "TODO"
+                shift
                 ;;
             *)
                 echo "Image Unknown Commnad: $1"
