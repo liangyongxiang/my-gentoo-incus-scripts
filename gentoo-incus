@@ -27,8 +27,9 @@ declare -A args=(
     ["instance_type"]="ctr"
     ['config_update']=0
     ['limit_cpu']="8"
-    ['limit_memory']="32Gib"
+    ['limit_memory']="32GiB"
     ['stop_after_create']=true
+    ['init']='--init-stable'
 )
 
 die() {
@@ -437,6 +438,7 @@ EOF
         shift
     else
         instance=$(incus image get-property "$image" "user.gentoo.stage3.default_name")
+        instance="${instance}-${args['init']#--init-}"
         if [ -z "$instance" ]; then
             die "Image property error: user.gentoo.stage3.abi_profile"
         fi
@@ -445,37 +447,36 @@ EOF
         fi
     fi
 
-    echo incus create "$image" "$instance"
-    echo incus config device add "$instance" "bin" disk source="${SCRIPTPATH}/instance/rootfs/lib" path="/root/bin" "shift=true"
-    echo incus config device add "$instance" "lib" disk source="${SCRIPTPATH}/instance/rootfs/lib" path="/root/lib" "shift=true"
-    echo incus config device add "$instance" "etc" disk source="${SCRIPTPATH}/instance/rootfs/etc" path="/root/etc" "shift=true"
-    echo incus config device add "$instance" "user" disk source="${SCRIPTPATH}/instance/rootfs/home" path="/root/home" "shift=true"
-    echo incus config device add "$instance" "repos" disk source="${SCRIPTPATH}/cache/repos" path="/root/repos" "shift=true"
-    echo incus config device add "$instance" "init" disk source="${SCRIPTPATH}/instances/$instance" path="/root/init" "shift=true"
-    echo incus config device add "$instance" "distfiles" disk source="/var/cache/distfiles" path="/var/cache/distfiles" "shift=true"
-    echo incus config set "$instance" limits.cpu="${args[limit_cpu]}"
-    echo incus config set "$instance" limits.memory="${args[limit_memory]}"
-    echo incus config set "$instance" "user.gentoo.inited=0"
+    incus create "$image" "$instance"
+    incus config device add "$instance" "bin" disk source="${SCRIPTPATH}/incus/rootfs/bin" path="/root/bin" "shift=true"
+    incus config device add "$instance" "lib" disk source="${SCRIPTPATH}/incus/rootfs/lib" path="/root/lib" "shift=true"
+    incus config device add "$instance" "etc" disk source="${SCRIPTPATH}/incus/rootfs/etc" path="/root/etc" "shift=true"
+    incus config device add "$instance" "user" disk source="${SCRIPTPATH}/incus/rootfs/home" path="/root/home" "shift=true"
+    incus config device add "$instance" "repos" disk source="${SCRIPTPATH}/cache/repos" path="/root/repos" "shift=true"
+    incus config device add "$instance" "distfiles" disk source="/var/cache/distfiles" path="/var/cache/distfiles" "shift=true"
+    incus config set "$instance" limits.cpu="${args[limit_cpu]}"
+    incus config set "$instance" limits.memory="${args[limit_memory]}"
+    incus config set "$instance" "user.gentoo.inited=0"
 
-    echo incus_start_and_wait "$instance"
+    incus_start_and_wait "$instance"
 
     if [ -n "${args['init']+abc}" ]; then
-        if echo incus exec "$instance" -- /root/bin/init.sh "${args['init']}"; then
-            echo incus config set "$instance" "user.gentoo.inited=${args['init']#--}"
+        if incus exec "$instance" -- /root/bin/init.sh "${args['init']}"; then
+           incus config set "$instance" "user.gentoo.inited=${args['init']#--}"
         fi
     fi
     if [ -n "${args['install']+abc}" ]; then
-        if echo incus exec "$instance" -- /root/init/install.sh "${args['install']}"; then
-            echo incus config set "$instance" "user.gentoo.${args['install']#--}=1"
+        if incus exec "$instance" -- /root/init/install.sh "${args['install']}"; then
+            incus config set "$instance" "user.gentoo.${args['install']#--}=1"
         fi
     fi
 
     # stop if need
     if "${args['stop_after_create']}"; then
-        echo incus stop "$instance"
+        incus stop "$instance"
     fi
 
-    echo incus snapshot create "$instance" latest
+    incus snapshot create "$instance" latest
 }
 
 incus_launch() {

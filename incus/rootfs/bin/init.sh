@@ -20,31 +20,31 @@ makeconf_update() {
 }
 
 case "$1" in
-    minial)
+    --init-minial)
         run_base=true
         run_makeconfg_base=false
         run_makeconf_all_targets=false
         run_makeconfig_testing=false
         ;;
-    stable)
+    --init-stable)
         run_base=true
         run_makeconfg_base=true
         run_makeconf_all_targets=false
         run_makeconfig_testing=false
         ;;
-    stable-all)
+    --init-stable-all)
         run_base=true
         run_makeconfg_base=true
         run_makeconf_all_targets=true
         run_makeconfig_testing=false
         ;;
-    testing)
+    --init-testing)
         run_base=true
         run_makeconfg_base=true
         run_makeconf_all_targets=false
         run_makeconfig_testing=true
         ;;
-    testing-all)
+    --init-testing-all)
         run_base=true
         run_makeconfg_base=true
         run_makeconf_all_targets=true
@@ -61,11 +61,11 @@ if "$run_makeconfig_testing"; then
 fi
 
 if "$run_makeconf_all_targets"; then
-    makeconf_update 'LUA_SINGLE_TARGET'    '"lua5-1"'
-    makeconf_update 'LUA_TARGETS'          '"lua5-1 lua5-2 lua5-3 lua5-4"'
-    makeconf_update 'PYTHON_SINGLE_TARGET' '"python3_11"'
-    makeconf_update 'PYTHON_TARGETS'       '"python3_10 python3_11 python3_12"'
-    makeconf_update 'RUBY_TARGETS'         '"ruby30 ruby31"'
+    makeconf_update "LUA_SINGLE_TARGET"    "lua5-1"
+    makeconf_update "LUA_TARGETS"          "lua5-1 lua5-2 lua5-3 lua5-4"
+    makeconf_update "PYTHON_SINGLE_TARGET" "python3_11"
+    makeconf_update "PYTHON_TARGETS"       "python3_10 python3_11 python3_12"
+    makeconf_update "RUBY_TARGETS"         "ruby30 ruby31"
 fi
 
 if "$run_makeconfg_base"; then
