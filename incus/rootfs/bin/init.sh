@@ -74,7 +74,7 @@ if "$run_makeconfg_base"; then
     makeconf_update "LDFLAGS"              "\${LDFLAGS} -Wl,--defsym=__gentoo_check_ldflags__=0"
     makeconf_update "PORTAGE_ELOG_CLASSES" "warn error info log qa"
     makeconf_update "PORTAGE_ELOG_SYSTEM"  "save"
-    makeconf_update "EMERGE_DEFAULT_OPTS"  "--verbose --quiet --noreplace --autounmask-continue --autounmask-write"
+    makeconf_update "EMERGE_DEFAULT_OPTS"  "--verbose --quiet --autounmask-continue --autounmask-write"
     makeconf_update "GENTOO_MIRRORS"       "https://mirrors.bfsu.edu.cn/gentoo/"
     makeconf_update "MAKEOPTS"             "--jobs $(nproc) --load-average $(( $(nproc) + 1 ))"
     makeconf_update "ACCEPT_LICENSE"       "*"
