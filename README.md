@@ -41,7 +41,7 @@ https://github.com/juippis/my-gentoo-lxd-scripts.git
 
 ./gentoo-incus launch --type vm --stable --python all --python-single python3_11 --build-image --sync --update --depclean <stage3>
 
-./gentoo-incus copy --type vm --stable --all-python-targets --create --sync --update [ name ]
+./gentoo-incus copy --stable --all-python-targets --sync --update [ name ]
 ```
 
 ## gtest

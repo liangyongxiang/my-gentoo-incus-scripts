@@ -21,9 +21,14 @@ declare -rA gentoo_stage3_mask=( ["amd64"]="x32" ) # incus not support x32
 declare keyword="${uname_to_gentoo_keyword[$(uname -m)]}"
 
 
+declare -a config_actions=()
 declare -A args=(
     ["pretend"]=false
     ["instance_type"]="ctr"
+    ['config_update']=0
+    ['limit_cpu']="8"
+    ['limit_memory']="32Gib"
+    ['stop_after_create']=true
 )
 
 die() {
@@ -39,6 +44,10 @@ run() {
     else
         "$@"
     fi
+}
+
+config_action_add() {
+    config_actions+=( $# "${@}" )
 }
 
 gentoo_stage3_info_fetch() {
@@ -113,7 +122,8 @@ distrobuilder_run() {
             "user.gentoo.stage3.abi_profile_date=${all_abi_profile_date["$stage3"]}"
             "user.gentoo.stage3.abi_profile=${all_abi_profile["$stage3"]}"
             "user.gentoo.stage3.abi=${all_abi["$stage3"]}"
-            "user.gentoo.init_system=${all_init_system["$stage3"]}"
+            "user.gentoo.stage3.init_system=${all_init_system["$stage3"]}"
+            "user.gentoo.stage3.default_name=${type}-${all_abi_profile["$stage3"]}"
         )
 
         run doas distrobuilder "${build_args[@]}"                 # TODO: doas or sudo or no password
@@ -326,21 +336,161 @@ EOF
 }
 
 incus_exec() {
-    echo "Unknown Commnad: $1"
+    while [[ $# -gt 0 ]]; do
+        case "${1-}" in
+            -h|--h)
+                usage
+                ;;
+            --init)
+                shift
+                echo incus exec "$instance" -- "$@"
+                ;;
+            *)
+                echo incus exec "$instance" -- "$@"
+                break
+                ;;
+        esac
+    done
+}
+
+incus_start_and_wait() {
+    local instance="$1"
+    incus start "$instance" &>/dev/null || true
+    while ! incus info "$instance"   | grep -E 'Processes: [0-9]+' &>/dev/null; do
+        sleep 1
+    done
+    while ! incus exec "$instance" ip address show scope global | grep 'inet.* scope global' &>/dev/null; do
+        sleep 1
+    done
 }
 
 incus_create() {
-    echo "incus_create"
+    usage() {
+        cat <<EOF
+incus create: TODO
+EOF
+        exit 1
+    }
+
+    local -a no_flags_args=()
+
+    while [[ $# -gt 0 ]]; do
+        case "${1-}" in
+            -h|--h)
+                usage
+                ;;
+            -p|--pretend)
+                args['pretend']=true
+                shift
+                ;;
+            -t|--type)
+                incus_check_type "$@"
+                shift 2
+                ;;
+            --cpu)
+                args['limit_cpu']="$2"
+                shift 2
+                ;;
+            --memory)
+                args['limit_memory']="$2"
+                shift 2
+                ;;
+            --update)
+                args['config_update']=1
+                shift
+                ;;
+            --init-*)
+                args['init']="$1"
+                shift
+                ;;
+            --install-*)
+                args['install']="$1"
+                shift
+                ;;
+            -*)
+                die "Unknown flags"
+                ;;
+            *)
+                no_flags_args+=( "$1" )
+                shift
+                ;;
+        esac
+    done
+
+    if [[ "${#no_flags_args[@]}" -gt 0 ]]; then
+        local stage3="${no_flags_args[0]}"
+        local image
+        image=$(incus config get "user.gentoo.image.latest.${args[instance_type]}.$stage3")
+        if [ -z "$image" ]; then
+            image="$stage3" # not stage3, maybe it is an image
+        fi
+        if ! incus image show "$image" &>/dev/null; then
+            die "Unknown Image: $stage3"
+        fi
+    else
+        die "TODO: request image or profile"
+    fi
+
+    local instance
+    if [[ "${#no_flags_args[@]}" -gt 1 ]]; then
+        instance="${no_flags_args[1]}"
+        shift
+    else
+        instance=$(incus image get-property "$image" "user.gentoo.stage3.default_name")
+        if [ -z "$instance" ]; then
+            die "Image property error: user.gentoo.stage3.abi_profile"
+        fi
+        if incus info "$instance" &>/dev/null; then
+            die "Instance $instance exist"
+        fi
+    fi
+
+    echo incus create "$image" "$instance"
+    echo incus config device add "$instance" "bin" disk source="${SCRIPTPATH}/instance/rootfs/lib" path="/root/bin" "shift=true"
+    echo incus config device add "$instance" "lib" disk source="${SCRIPTPATH}/instance/rootfs/lib" path="/root/lib" "shift=true"
+    echo incus config device add "$instance" "etc" disk source="${SCRIPTPATH}/instance/rootfs/etc" path="/root/etc" "shift=true"
+    echo incus config device add "$instance" "user" disk source="${SCRIPTPATH}/instance/rootfs/home" path="/root/home" "shift=true"
+    echo incus config device add "$instance" "repos" disk source="${SCRIPTPATH}/cache/repos" path="/root/repos" "shift=true"
+    echo incus config device add "$instance" "init" disk source="${SCRIPTPATH}/instances/$instance" path="/root/init" "shift=true"
+    echo incus config device add "$instance" "distfiles" disk source="/var/cache/distfiles" path="/var/cache/distfiles" "shift=true"
+    echo incus config set "$instance" limits.cpu="${args[limit_cpu]}"
+    echo incus config set "$instance" limits.memory="${args[limit_memory]}"
+    echo incus config set "$instance" "user.gentoo.inited=0"
+
+    echo incus_start_and_wait "$instance"
+
+    if [ -n "${args['init']+abc}" ]; then
+        if echo incus exec "$instance" -- /root/bin/init.sh "${args['init']}"; then
+            echo incus config set "$instance" "user.gentoo.inited=${args['init']#--}"
+        fi
+    fi
+    if [ -n "${args['install']+abc}" ]; then
+        if echo incus exec "$instance" -- /root/init/install.sh "${args['install']}"; then
+            echo incus config set "$instance" "user.gentoo.${args['install']#--}=1"
+        fi
+    fi
+
+    # stop if need
+    if "${args['stop_after_create']}"; then
+        echo incus stop "$instance"
+    fi
+
+    echo incus snapshot create "$instance" latest
 }
 
 incus_launch() {
-    echo "incus_launch"
+    args['stop_after_create']=false
+    incus_create "$@"
 }
 
 incus_copy() {
+    # 1. select exist instance and copy
     echo "incus_copy"
 }
 incus_update() {
+    # update
+    #
+    # remove old snapshot and add new snapshot
     echo "incus_update"
 }
 
