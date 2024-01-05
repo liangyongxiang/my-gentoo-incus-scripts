@@ -25,11 +25,23 @@ declare -a config_actions=()
 declare -A args=(
     ["pretend"]=false
     ["instance_type"]="ctr"
-    ['config_update']=0
+    ['config_update']=false
     ['limit_cpu']="8"
     ['limit_memory']="32GiB"
     ['stop_after_create']=true
     ['init']='--init-stable'
+    ['build_image']=true
+)
+
+declare -a instance_all_runs=(
+    --init-gentoo-repo
+    --init-make-conf-base
+    --init-all-targets
+    --init-testing
+    --init-essential-tool
+    --install-dev-tool
+    --install-dwm
+    --install-fcitx5
 )
 
 die() {
@@ -65,11 +77,11 @@ gentoo_stage3_info_fetch() {
         path="${line% *}"                               # 20231217T170203Z/stage3-amd64-openrc-20231217T170203Z.tar.xz
         date="$(dirname "$path")"                       # 20231217T170203Z
         file="$(basename "$path")"                      # stage3-amd64-openrc-20231217T170203Z.tar.xz
-        abi_profile_date="${file%%.*}"                  # stage3-amd64-openrc-20231217T170203Z
-        abi_profile="${abi_profile_date%-*}"            # stage3-amd64-openrc
-        abi="${abi_profile#*-}"                         # amd64-openrc-20231217T170203Z
-        abi="${abi%%-*}"                                # amd64
-        stage3="${abi_profile_date#*-*-}"               # openrc-20231217T170203Z
+        file="${file#*-}"                               # amd64-openrc-20231217T170203Z.tar.xz
+        abi_profile_date="${file%%.*}"                  # amd64-openrc-20231217T170203Z
+        abi_profile="${abi_profile_date%-*}"            # amd64-openrc
+        abi="${abi_profile%%-*}"                        # amd64
+        stage3="${abi_profile_date#*-}"                 # openrc-20231217T170203Z
         stage3="${stage3%-*}"                           # openrc
         if [[ $stage3 = *systemd* ]]; then
             init_system="systemd"
@@ -373,7 +385,7 @@ EOF
         exit 1
     }
 
-    local -a no_flags_args=()
+    local -a pargs=()
 
     while [[ $# -gt 0 ]]; do
         case "${1-}" in
@@ -397,7 +409,8 @@ EOF
                 shift 2
                 ;;
             --update)
-                args['config_update']=1
+                # TODO : yes/no
+                args['config_update']=true
                 shift
                 ;;
             --init-*)
@@ -412,14 +425,14 @@ EOF
                 die "Unknown flags"
                 ;;
             *)
-                no_flags_args+=( "$1" )
+                pargs+=( "$1" )
                 shift
                 ;;
         esac
     done
 
-    if [[ "${#no_flags_args[@]}" -gt 0 ]]; then
-        local stage3="${no_flags_args[0]}"
+    if [[ "${#pargs[@]}" -gt 0 ]]; then
+        local stage3="${pargs[0]}"
         local image
         image=$(incus config get "user.gentoo.image.latest.${args[instance_type]}.$stage3")
         if [ -z "$image" ]; then
@@ -433,9 +446,8 @@ EOF
     fi
 
     local instance
-    if [[ "${#no_flags_args[@]}" -gt 1 ]]; then
-        instance="${no_flags_args[1]}"
-        shift
+    if [[ "${#pargs[@]}" -gt 1 ]]; then
+        instance="${pargs[1]}"
     else
         instance=$(incus image get-property "$image" "user.gentoo.stage3.default_name")
         instance="${instance}-${args['init']#--init-}"
@@ -485,9 +497,249 @@ incus_launch() {
 }
 
 incus_copy() {
-    # 1. select exist instance and copy
-    echo "incus_copy"
+    usage() {
+        cat <<EOF
+incus copy: TODO
+EOF
+        exit 1
+    }
+
+    local -a pargs=()
+
+    args['config_update']=false
+    local init_runs=()
+
+    init_runs_add() {
+        if ! [[ " ${init_runs[*]} " =~ [[:space:]]$1[[:space:]] ]]; then
+            init_runs+=( "$1" )
+        fi
+    }
+
+    while [[ $# -gt 0 ]]; do
+        case "${1-}" in
+            -h|--h)
+                usage
+                ;;
+            -p|--pretend)
+                args['pretend']=true
+                shift
+                ;;
+            -t|--type)
+                incus_check_type "$@"
+                shift 2
+                ;;
+            --cpu)
+                args['limit_cpu']="$2"
+                shift 2
+                ;;
+            --memory)
+                args['limit_memory']="$2"
+                shift 2
+                ;;
+            --init-minial)
+                init_runs_add "--init-gentoo-repo"
+                shift
+                ;;
+            --init-stable)
+                init_runs_add "--init-gentoo-repo"
+                init_runs_add "--init-make-conf-base"
+                init_runs_add "--init-essential-tool"
+                shift
+                ;;
+            --init-stable-all)
+                init_runs_add "--init-gentoo-repo"
+                init_runs_add "--init-make-conf-base"
+                init_runs_add "--init-all-targets"
+                init_runs_add "--update"
+                init_runs_add "--init-essential-tool"
+                shift
+                ;;
+            --init-testing)
+                init_runs_add "--init-gentoo-repo"
+                init_runs_add "--init-make-conf-base"
+                init_runs_add "--init-testing"
+                init_runs_add "--update"
+                init_runs_add "--init-essential-tool"
+                shift
+                ;;
+            --init-testing-all)
+                init_runs_add "--init-gentoo-repo"
+                init_runs_add "--init-make-conf-base"
+                init_runs_add "--init-all-targets"
+                init_runs_add "--init-testing"
+                init_runs_add "--update"
+                init_runs_add "--init-essential-tool"
+                shift
+                ;;
+            --install-*)
+                init_runs_add "$1"
+                shift
+                ;;
+            *)
+                pargs+=( "$1" )
+                shift
+                ;;
+        esac
+    done
+
+    local stage3
+    local image
+    local new_instance
+    local filter
+    local filtered_instances
+    local is_create
+
+    gentoo_stage3_info_fetch
+
+    if [[ "${#pargs[@]}" -gt 0 ]]; then
+        stage3="${pargs[0]}"
+        if ! [[ " ${all_stage3[*]} " =~ [[:space:]]${stage3}[[:space:]] ]]; then
+            die "Request an exist image or stage3: ${stage3}"
+        fi
+        image=$(incus config get "user.gentoo.image.latest.${args[instance_type]}.$stage3")
+        if [ -z "$image" ]; then
+            is_create=true
+            distrobuilder_run "$stage3" "${args[instance_type]}"
+            image=$(incus config get "user.gentoo.image.latest.${args[instance_type]}.$stage3")
+        fi
+    else
+        die "request stage3 name"
+    fi
+
+    if [[ "${#pargs[@]}" -gt 1 ]]; then
+         new_instance="${pargs[1]}"
+         if incus info "$new_instance" &>/dev/null; then
+             die "instance exist: $new_instance"
+         fi
+    else
+        new_instance="${image%-*}-$(date "+%Y%m%dT%H%M%SZ")"
+    fi
+
+    echo "${init_runs[@]}"
+
+    local new_tpl_instance
+    local cur_tpl_instance
+
+    filter="${args["instance_type"]}-${all_abi_profile["$stage3"]}-tpl-"
+    filtered_instances=$(incus list --format csv --columns n "$filter")
+    if [ -n "$filtered_instances" ]; then
+        is_create=false
+        filtered_instances=$(echo "$filtered_instances" | sort -r)
+
+        local cur_attr=0
+        local columns=""
+        for run in "${!instance_all_runs[@]}"; do
+            columns="${columns}user.gentoo.init.${instance_all_runs[$run]#--},"
+            if [[ " ${init_runs[*]} " =~ [[:space:]]${instance_all_runs[$run]}[[:space:]] ]]; then
+                cur_attr=$((cur_attr | (1 << run)))
+                printf "cur_attr: 0x%x\n" "$cur_attr"
+            fi
+        done
+        columns="${columns%,}"
+
+        local latest_remain_attr=0
+        local latest_remain_cnt="${#instance_all_runs}"
+
+        while read -r instance; do
+            local inited_attr=0
+            local remain_attr=0
+            local remain_cnt=0
+
+            IFS="," read -r -a init_conf <<< "$(incus list --format csv --columns "$columns" "$instance")"
+            for i in "${!init_conf[@]}"; do
+                if [ "${init_conf[$i]}" -eq 1 ]; then
+                    inited_attr=$((inited_attr | (1 << i)))
+                fi
+            done
+            printf "$instance, inited: 0x%x, cur: 0x%x\n" "$inited_attr" "$cur_attr"
+
+            if [ $inited_attr -eq $cur_attr ]; then
+                cur_tpl_instance="$instance"
+                latest_remain_attr=0
+                latest_remain_cnt=0
+                echo "  find full match instance: $instance"
+                break
+            elif [ $((inited_attr & ~cur_attr)) -ne 0 ]; then
+                echo "  skip unumatch instance: $instance"
+                continue
+            else
+                 remain_attr=$((cur_attr & ~inited_attr))
+                 local tmp="$remain_attr"
+                 while [[ $tmp -gt 0 ]]; do
+                    local t=$(( tmp & 1 ))
+                    if [[ $t -eq 1 ]];then
+                        remain_cnt=$(( remain_cnt + 1 ))
+                    fi
+                    tmp=$(( tmp / 2 ))
+                 done
+                 echo "remain_cnt: $remain_cnt, latest_remain_cnt: $latest_remain_cnt"
+                 if [[ $remain_cnt -lt $latest_remain_cnt ]]; then
+                     cur_tpl_instance="$instance"
+                     latest_remain_cnt="$remain_cnt"
+                     latest_remain_attr="$remain_attr"
+                     printf "  find part match instance: $instance, remain : 0x%x/0x%x\n" "$remain_cnt" "$remain_attr"
+                 fi
+            fi
+        done <<< "$filtered_instances"
+
+        if [ -z "$cur_tpl_instance" ]; then
+            die "cur_tpl_instance : TODO"
+        fi
+
+        if [ "$latest_remain_attr" -ne 0 ]; then
+            init_runs=()
+            for run in "${!instance_all_runs[@]}"; do
+                echo "$latest_remain_attr/$run"
+                echo "$((latest_remain_attr & (1 << run)))"
+                if [[ $((latest_remain_attr & (1 << run))) -ne 0 ]]; then
+                    init_runs+=( "${instance_all_runs[$run]}" )
+                fi
+            done
+        fi
+        echo "init_runs: ${init_runs[@]}"
+    else
+        is_create=true
+    fi
+
+    for r in "${init_runs[@]}"; do
+        new_tpl_instance="${image%-*}-tpl-$(date "+%Y%m%dT%H%M%SZ")"
+        if "$is_create"; then
+            is_create=false
+            echo incus create "$image" "$new_tpl_instance"
+            incus create "$image" "$new_tpl_instance"
+            incus config device add "$new_tpl_instance" "bin" disk source="${SCRIPTPATH}/incus/rootfs/bin" path="/root/bin" "shift=true"
+            incus config device add "$new_tpl_instance" "lib" disk source="${SCRIPTPATH}/incus/rootfs/lib" path="/root/lib" "shift=true"
+            incus config device add "$new_tpl_instance" "etc" disk source="${SCRIPTPATH}/incus/rootfs/etc" path="/root/etc" "shift=true"
+            incus config device add "$new_tpl_instance" "user" disk source="${SCRIPTPATH}/incus/rootfs/home" path="/root/home" "shift=true"
+            incus config device add "$new_tpl_instance" "repos" disk source="${SCRIPTPATH}/cache/repos" path="/root/repos" "shift=true"
+            incus config device add "$new_tpl_instance" "distfiles" disk source="/var/cache/distfiles" path="/var/cache/distfiles" "shift=true"
+            incus config set "$new_tpl_instance" limits.cpu="${args[limit_cpu]}"
+            incus config set "$new_tpl_instance" limits.memory="${args[limit_memory]}"
+            for ir in "${instance_all_runs[@]}"; do
+                incus config set "$new_tpl_instance" "user.gentoo.init.${ir#--}=0"
+            done
+        else
+            echo incus copy "$cur_tpl_instance" "$new_tpl_instance"
+            incus copy "$cur_tpl_instance" "$new_tpl_instance"
+        fi
+        cur_tpl_instance="$new_tpl_instance"
+
+        incus_start_and_wait "$new_tpl_instance"
+        echo incus exec "$new_tpl_instance" -- /root/bin/instance.sh "$r"
+        if incus exec "$new_tpl_instance" -- /root/bin/instance.sh "$r"; then
+            incus config set "$new_tpl_instance" "user.gentoo.init.${r#--}=1"
+        else
+            # TODO: check cleanup option
+            die "TODO"
+        fi
+        #incus stop "$instance"
+        incus exec "$new_tpl_instance" -- shutdown -h now
+    done
+
+    echo incus copy "$new_tpl_instance" "$new_instance"
+    incus copy "$new_tpl_instance" "$new_instance"
 }
+
 incus_update() {
     # update
     #
