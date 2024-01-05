@@ -38,7 +38,7 @@ declare -a instance_all_runs=(
     --init-make-conf-base
     --init-all-targets
     --init-testing
-    --init-essential-tool
+    --install-essential-tool
     --install-dev-tool
     --install-dwm
     --install-fcitx5
@@ -543,7 +543,7 @@ EOF
             --init-stable)
                 init_runs_add "--init-gentoo-repo"
                 init_runs_add "--init-make-conf-base"
-                init_runs_add "--init-essential-tool"
+                init_runs_add "--install-essential-tool"
                 shift
                 ;;
             --init-stable-all)
@@ -551,7 +551,7 @@ EOF
                 init_runs_add "--init-make-conf-base"
                 init_runs_add "--init-all-targets"
                 init_runs_add "--update"
-                init_runs_add "--init-essential-tool"
+                init_runs_add "--install-essential-tool"
                 shift
                 ;;
             --init-testing)
@@ -559,7 +559,7 @@ EOF
                 init_runs_add "--init-make-conf-base"
                 init_runs_add "--init-testing"
                 init_runs_add "--update"
-                init_runs_add "--init-essential-tool"
+                init_runs_add "--install-essential-tool"
                 shift
                 ;;
             --init-testing-all)
@@ -568,7 +568,7 @@ EOF
                 init_runs_add "--init-all-targets"
                 init_runs_add "--init-testing"
                 init_runs_add "--update"
-                init_runs_add "--init-essential-tool"
+                init_runs_add "--install-essential-tool"
                 shift
                 ;;
             --install-*)
@@ -732,8 +732,8 @@ EOF
             # TODO: check cleanup option
             die "TODO"
         fi
-        #incus stop "$instance"
         incus exec "$new_tpl_instance" -- shutdown -h now
+        incus stop "$new_tpl_instance"
     done
 
     echo incus copy "$new_tpl_instance" "$new_instance"

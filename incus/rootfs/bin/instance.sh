@@ -65,11 +65,12 @@ main() {
                 emerge --update --deep --newuse --backtrack=300 @world
                 shift
                 ;;
-            --init-essential-tool)
+            --install-essential-tool)
                 emerge --noreplace app-eselect/eselect-repository app-portage/flaggie
                 shift
                 ;;
             --install-dev-tool)
+                emerge --noreplace app-eselect/eselect-repository app-portage/flaggie
                 flaggie "sys-apps/util-linux" "+caps"
                 local dev_packages=(
                     app-editors/vim
