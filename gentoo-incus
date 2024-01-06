@@ -728,12 +728,12 @@ EOF
         echo incus exec "$new_tpl_instance" -- /root/bin/instance.sh "$r"
         if incus exec "$new_tpl_instance" -- /root/bin/instance.sh "$r"; then
             incus config set "$new_tpl_instance" "user.gentoo.init.${r#--}=1"
+            incus exec "$new_tpl_instance" -- shutdown -h now
+            incus stop "$new_tpl_instance"
         else
-            # TODO: check cleanup option
-            die "TODO"
+            incus rm --force "$new_tpl_instance"
+            die "Run /root/bin/instance.sh $r faild in ${new_tpl_instance}"
         fi
-        incus exec "$new_tpl_instance" -- shutdown -h now
-        incus stop "$new_tpl_instance"
     done
 
     echo incus copy "$new_tpl_instance" "$new_instance"

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -x
+
 main_tree_switch_to_git() {
     if ! portageq repos_config / | grep -E 'sync-type.*git' &>/dev/null; then
         emerge dev-vcs/git app-eselect/eselect-repository
@@ -92,7 +94,7 @@ main() {
                 ;;
             --install-dwm)
                 flaggie media-libs/mesa +video_cards_virgl
-                emerge --oneshot media-libs/mesa
+                emerge --oneshot --noreplace media-libs/mesa
                 local dev_packages=(
                     x11-base/xorg-server
                     x11-misc/dmenu
@@ -102,13 +104,16 @@ main() {
                 emerge --noreplace "${dev_packages[@]}"
 
                 local new_user="user"
-                if ! id "$new_user"; then
+                if ! id "$new_user" &>/dev/null; then
                     useradd -m -G users,wheel,audio -s /bin/bash "$new_user"
                     passwd -d "$new_user"
                 fi
 
                 local file="/home/user/.xinitrc"
-                rsync --chown="$new_user:$new_user" "/root${file}" "$file"
+                if [ ! -f "$file" ]; then
+                    rsync --chown="$new_user:$new_user" "/root${file}" "$file"
+                fi
+                shift
                 ;;
             --install-fcitx5)
                 flaggie x11-libs/xcb-imdkit +~amd64
@@ -130,6 +135,7 @@ main() {
                     app-i18n/fcitx-configtool
                 )
                 emerge --noreplace "${dev_packages[@]}"
+                shift
                 ;;
             --*)
                 echo "Unknown options: $1"
