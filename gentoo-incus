@@ -36,6 +36,7 @@ declare -A args=(
 declare -a instance_all_runs=(
     --init-gentoo-repo
     --init-make-conf-base
+    --init-make-conf-getbinpkg
     --init-all-targets
     --init-testing
     --install-essential-tool
@@ -569,6 +570,10 @@ EOF
                 init_runs_add "--init-testing"
                 init_runs_add "--update"
                 init_runs_add "--install-essential-tool"
+                shift
+                ;;
+            --init-make-conf-getbinpkg)
+                init_runs_add "--init-make-conf-getbinpkg"
                 shift
                 ;;
             --install-*)

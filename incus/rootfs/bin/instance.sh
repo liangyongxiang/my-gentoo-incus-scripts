@@ -54,6 +54,10 @@ main() {
                 makeconf_update "BINPKG_FORMAT"        "gpkg"
                 shift
                 ;;
+            --init-make-conf-getbinpkg)
+                makeconf_update "FEATURES"             "getbinpkg binpkg-request-signature"
+                shift
+                ;;
             --init-all-targets)
                 makeconf_update "LUA_SINGLE_TARGET"    "lua5-1"
                 makeconf_update "LUA_TARGETS"          "lua5-1 lua5-2 lua5-3 lua5-4"
@@ -128,11 +132,16 @@ main() {
                 flaggie app-i18n/fcitx-table-other +~amd64
 
                 flaggie app-i18n/fcitx-chinese-addons +lua
+                flaggie media-fonts/noto +cjk
 
                 local dev_packages=(
                     app-i18n/fcitx
+                    app-i18n/fcitx-qt
+                    app-i18n/fcitx-gtk
                     app-i18n/fcitx-chinese-addons
                     app-i18n/fcitx-configtool
+                    media-fonts/noto
+                    media-fonts/noto-emoji
                 )
                 emerge --noreplace "${dev_packages[@]}"
                 shift
